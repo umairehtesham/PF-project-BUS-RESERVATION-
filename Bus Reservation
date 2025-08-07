@@ -1,0 +1,314 @@
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+
+#define PHONE_NUMBER_LENGTH 11
+#define MAX_SEATS 35
+#define LAH_PRICE 6000
+#define QUE_PRICE 4000
+#define ISL_PRICE 7000
+#define PES_PRICE 5000
+
+struct Booking {
+    int bookingId;       
+    char name[50];       
+    char bookingDay[20]; 
+    char todayDay[20];   
+    char destination[50]; 
+    char p_no[PHONE_NUMBER_LENGTH + 1]; 
+    char e_add[30];      
+    int price;           
+};
+
+int verifyEmailAddress(char *email) {
+    int atSymbol = 0, dot = 0;
+    int length = strlen(email);
+
+    for (int i = 0; i < length; i++) {
+        if (email[i] == '@') atSymbol = i;
+        if (email[i] == '.') dot = i;
+    }
+    return (atSymbol > 0 && dot > atSymbol + 1 && dot < length - 1);
+}
+
+int is_valid_phone_numberlen(char *phone) {
+    return (strlen(phone) == PHONE_NUMBER_LENGTH);
+}
+
+int is_valid_phone_numberchar(char *phone) {
+    for (int i = 0; i < PHONE_NUMBER_LENGTH; i++) {
+        if (phone[i] < '0' || phone[i] > '9') return 0;
+    }
+    return 1;
+}
+
+// Arrays to store bookings for each destination and each day of the week
+struct Booking lahBookings[7][35], queBookings[7][35], islBookings[7][35], pesBookings[7][35];
+
+// Counters to track bookings for each destination
+int lahCount[7] = {0}, queCount[7] = {0}, islCount[7] = {0}, pesCount[7] = {0};
+
+// Booking ID counters for each destination and each day
+int lahBookingId[7] = {1100, 1200, 1300, 1400, 1500, 1600, 1700};
+int queBookingId[7] = {2100, 2200, 2300, 2400, 2500, 2600, 2700};
+int islBookingId[7] = {3100, 3200, 3300, 3400, 3500, 3600, 3700};
+int pesBookingId[7] = {4100, 4200, 4300, 4400, 4500, 4600, 4700};
+
+void saveStateToFile() {
+    FILE *file = fopen("State.txt", "w");
+    if (file == NULL) {
+        perror("Error saving state to file");
+        return;
+    }
+
+    // Save Booking IDs
+    for (int i = 0; i < 7; i++) {
+        fprintf(file, "%d %d %d %d\n", lahBookingId[i], queBookingId[i], islBookingId[i], pesBookingId[i]);
+    }
+
+    // Save Seat Counts
+    for (int i = 0; i < 7; i++) {
+        fprintf(file, "%d %d %d %d\n", lahCount[i], queCount[i], islCount[i], pesCount[i]);
+    }
+
+    fclose(file);
+}
+void loadStateFromFile() {
+    FILE *file = fopen("State.txt", "r");
+    if (file == NULL) {
+        printf("No previous state data found. Starting fresh.\n");
+        return; // If no file exists, use the default starting values.
+    }
+
+    // Load Booking IDs
+    for (int i = 0; i < 7; i++) {
+        fscanf(file, "%d %d %d %d", &lahBookingId[i], &queBookingId[i], &islBookingId[i], &pesBookingId[i]);
+    }
+
+    // Load Seat Counts
+    for (int i = 0; i < 7; i++) {
+        fscanf(file, "%d %d %d %d", &lahCount[i], &queCount[i], &islCount[i], &pesCount[i]);
+    }
+
+    fclose(file);
+}
+
+void saveBookingToFile(const char *filename, struct Booking *booking) {
+    FILE *fp = fopen(filename, "a");
+    if (fp == NULL) {
+        printf("Error opening file!\n");
+        return;
+    }
+    fprintf(fp, "Booking ID: %d, Name: %s, Departure day: %s, Booking day: %s, Destination: %s, Phone Number: %s, Email address: %s, Price: %d\n",
+            booking->bookingId, booking->name, booking->bookingDay, booking->todayDay, booking->destination, booking->p_no, booking->e_add, booking->price);
+    fclose(fp);
+}
+
+// Function to get the index for days
+int getDayIndex(const char *day) {
+    if (strcmp(day, "Monday") == 0) return 0;
+    if (strcmp(day, "Tuesday") == 0) return 1;
+    if (strcmp(day, "Wednesday") == 0) return 2;
+    if (strcmp(day, "Thursday") == 0) return 3;
+    if (strcmp(day, "Friday") == 0) return 4;
+    if (strcmp(day, "Saturday") == 0) return 5;
+    if (strcmp(day, "Sunday") == 0) return 6;
+    return -1;
+}
+
+void showAvailableSeats() {
+    const char* destinations[] = {"Lahore", "Quetta", "Islamabad", "Peshawar"};
+    int* counts[] = {lahCount, queCount, islCount, pesCount};
+
+    printf("\nAvailable seats for each destination and day:\n");
+    for (int i = 0; i < 4; i++) {
+        printf("\n%s:\n", destinations[i]);
+        for (int j = 0; j < 7; j++) {
+            printf("  %s: %d seats available\n",
+                   (j == 0 ? "Monday" : j == 1 ? "Tuesday" : j == 2 ? "Wednesday" :
+                   j == 3 ? "Thursday" : j == 4 ? "Friday" : j == 5 ? "Saturday" : "Sunday"),
+                   MAX_SEATS - counts[i][j]);
+        }
+    }
+}
+
+void cancel() {
+    char v_id[10];
+    printf("Enter your booking ID to cancel: ");
+    scanf("%s", v_id);
+
+    FILE *file = fopen("Bookings.txt", "r");
+    if (file == NULL) {
+        perror("Error opening file");
+        return;
+    }
+
+    FILE *temp = fopen("Temp.txt", "w");
+    if (temp == NULL) {
+        perror("Error opening temporary file");
+        fclose(file);
+        return;
+    }
+
+    char line[200];
+    int found = 0;
+    struct Booking booking;
+
+    // Loop through file to find the booking
+    while (fgets(line, sizeof(line), file)) {
+        if (strstr(line, v_id)) {
+            found = 1;
+            // Extract details to update counters
+            sscanf(line, "Booking ID: %d, Name: %[^,], Departure day: %[^,], Booking day: %[^,], Destination: %[^,], Phone Number: %[^,], Email address: %[^,], Price: %d",
+                   &booking.bookingId, booking.name, booking.bookingDay, booking.todayDay, booking.destination, booking.p_no, booking.e_add, &booking.price);
+
+            int dayIndex = getDayIndex(booking.bookingDay);
+            if (strcmp(booking.destination, "Lahore") == 0 && dayIndex != -1) lahCount[dayIndex]--;
+            else if (strcmp(booking.destination, "Quetta") == 0 && dayIndex != -1) queCount[dayIndex]--;
+            else if (strcmp(booking.destination, "Islamabad") == 0 && dayIndex != -1) islCount[dayIndex]--;
+            else if (strcmp(booking.destination, "Peshawar") == 0 && dayIndex != -1) pesCount[dayIndex]--;
+        } else {
+            fputs(line, temp); // Copy non-matching lines to the temp file
+        }
+    }
+
+    fclose(file);
+    fclose(temp);
+
+    if (found) {
+        remove("Bookings.txt");             // Delete old file
+        rename("Temp.txt", "Bookings.txt"); // Rename temp file
+        printf("Booking ID %s has been successfully canceled.\n", v_id);
+    } else {
+        remove("Temp.txt"); // Clean up temp file
+        printf("Booking ID %s not found.\n", v_id);
+    }
+}
+
+int main() {
+	loadStateFromFile();
+    int menu, des, day;
+    printf("\n-----------------------------------------\n");
+    printf("       BUS RESERVATION SYSTEM MENU       ");
+    printf("\n-----------------------------------------\n");
+    do {
+    
+        printf("\n1. Book ride\n2. View booking\n3. Cancel booking\n4. View Available seats\n5. Exit\nChoose an option: ");
+        scanf("%d", &menu);
+
+        if (menu == 1) {
+            struct Booking booking;
+            char phone_number[PHONE_NUMBER_LENGTH + 1];
+
+            printf("\n1. Lahore\n2. Quetta\n3. Islamabad\n4. Peshawar\nChoose your destination: ");
+            scanf("%d", &des);
+
+            getchar();  // Clear buffer
+            printf("Enter booking day (e.g., Monday): ");
+			scanf("%s", booking.todayDay);
+			day = getDayIndex(booking.todayDay);
+			if (day == -1) {
+			    printf("Invalid day.\n");
+			    continue;
+			}
+			
+			printf("Enter your departure day (e.g., Tuesday): ");
+			scanf("%s", booking.bookingDay);
+			int bookingDayIndex = getDayIndex(booking.bookingDay);
+			if (bookingDayIndex == -1 || (bookingDayIndex + 7 - day) % 7 == 0) {
+			    printf("Invalid or too close booking day.\n");
+			    continue;
+			}
+
+            switch (des) {
+                case 1: strcpy(booking.destination, "Lahore"); booking.price = LAH_PRICE; break;
+                case 2: strcpy(booking.destination, "Quetta"); booking.price = QUE_PRICE; break;
+                case 3: strcpy(booking.destination, "Islamabad"); booking.price = ISL_PRICE; break;
+                case 4: strcpy(booking.destination, "Peshawar"); booking.price = PES_PRICE; break;
+                default: printf("Invalid destination.\n"); continue;
+            }
+
+            getchar();
+            printf("Enter your name: ");
+            fgets(booking.name, sizeof(booking.name), stdin);
+            booking.name[strcspn(booking.name, "\n")] = '\0';
+
+            printf("Enter phone number: ");
+		    scanf("%s", phone_number);
+		    while (getchar() != '\n'); // Clear buffer after scanf
+		    if (!is_valid_phone_numberlen(phone_number) || !is_valid_phone_numberchar(phone_number)) {
+		        printf("Invalid phone number.\n");
+		        continue;
+		    }
+            strcpy(booking.p_no, phone_number);
+
+            printf("Enter email address: ");
+            scanf("%s", booking.e_add);
+            if (!verifyEmailAddress(booking.e_add)) {
+                printf("Invalid email address.\n");
+                continue;
+            }
+
+            // Assign booking ID and save booking
+            if (des == 1 && lahCount[bookingDayIndex] < 35) {
+                booking.bookingId = lahBookingId[bookingDayIndex]++;
+                lahBookings[bookingDayIndex][lahCount[bookingDayIndex]++] = booking;
+                saveBookingToFile("Bookings.txt", &booking);
+                saveStateToFile();
+                printf("Booking confirmed for Lahore. ID: %d. Your bill for this journey is: %d\n", booking.bookingId, booking.price);
+            } else if (des == 2 && queCount[bookingDayIndex] < 35) {
+                booking.bookingId = queBookingId[bookingDayIndex]++;
+                queBookings[bookingDayIndex][queCount[bookingDayIndex]++] = booking;
+                saveBookingToFile("Bookings.txt", &booking);
+                saveStateToFile();
+                printf("Booking confirmed for Quetta. ID: %d. Your bill for this journey is: %d\n", booking.bookingId, booking.price);
+            } else if (des == 3 && islCount[bookingDayIndex] < 35) {
+                booking.bookingId = islBookingId[bookingDayIndex]++;
+                islBookings[bookingDayIndex][islCount[bookingDayIndex]++] = booking;
+                saveBookingToFile("Bookings.txt", &booking);
+                saveStateToFile();
+                printf("Booking confirmed for Islamabad. ID: %d. Your bill for this journey is: %d\n", booking.bookingId, booking.price);
+            } else if (des == 4 && pesCount[bookingDayIndex] < 35) {
+                booking.bookingId = pesBookingId[bookingDayIndex]++;
+                pesBookings[bookingDayIndex][pesCount[bookingDayIndex]++] = booking;
+                saveBookingToFile("Bookings.txt", &booking);
+                saveStateToFile();
+                printf("Booking confirmed for Peshawar. ID: %d. Your bill for this journey is: %d\n", booking.bookingId, booking.price);
+            } else {
+                printf("No seats available.\n");
+            }
+
+        } else if (menu == 2) {
+            char v_id[10];
+            printf("Enter your booking ID: ");
+            scanf("%s", v_id);
+
+            FILE *file = fopen("Bookings.txt", "r");
+            if (file == NULL) {
+                perror("Error opening file");
+                continue;
+            }
+
+            char line[200];
+            int found = 0;
+            while (fgets(line, sizeof(line), file)) {
+                if (strstr(line, v_id)) {
+                    printf("Booking found: %s", line);
+                    found = 1;
+                    break;
+                }
+            }
+            fclose(file);
+            if (!found) printf("Booking ID %s not found.\n", v_id);
+        } else if (menu == 3) {
+            cancel();
+            saveStateToFile();
+        } else if (menu == 4) {
+            showAvailableSeats();
+        }
+    } while (menu != 5);
+	printf("\n-----------------------------------------\n");
+    printf("              THANK YOU:)      ");
+    printf("\n-----------------------------------------\n");
+    return 0;
+}
